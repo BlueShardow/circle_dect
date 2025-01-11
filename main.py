@@ -3,61 +3,107 @@ import numpy as np
 import os
 
 def resize_to_720p(img):
-    """
-    Resize the image to have a height of 720 pixels while maintaining the original aspect ratio.
-    """
     height, width = img.shape[:2]
     aspect_ratio = width / height
     new_height = 720
     new_width = int(new_height * aspect_ratio)
-    resized_img = cv2.resize(img, (new_width, new_height))
-    return resized_img
+    return cv2.resize(img, (new_width, new_height))
 
-def detect_circles(img):
-    """
-    Detect circles in the image using Hough Circle Transform.
-    """
-    # Convert image to grayscale
+def enhance_contrast(img):
+    if len(img.shape) == 2:  # Grayscale
+        clahe = cv2.createCLAHE(clipLimit=50.0, tileGridSize=(5, 5))
+        img = clahe.apply(img)
+        return cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
+    elif len(img.shape) == 3:  # Color
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8, 8))
+        enhanced_l = clahe.apply(l)
+        enhanced_l = cv2.normalize(enhanced_l, None, 0, 255, cv2.NORM_MINMAX)
+        enhanced_lab = cv2.merge((enhanced_l, a, b))
+        return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+    else:
+        return img
+
+def sharpen_image(img):
+    kernel = np.array([[0, -1, 0], 
+                       [-1, 5, -1], 
+                       [0, -1, 0]])  # Sharpening kernel
+    return cv2.filter2D(img, -1, kernel)
+
+def detect_best_circle(img, param1_range=(35, 150), param2_range=(100, 250), minRadius=25, maxRadius=99999):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (17, 17), 0)
+    gray = sharpen_image(gray)
+    #_, binary = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY)
+    gray = cv2.medianBlur(gray, ksize=5)
 
-    # Apply GaussianBlur to reduce noise
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    best_circle = None
+    max_radius = 0
 
-    # Use HoughCircles to detect circles in the image
-    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 50, param1=50, param2=200, minRadius=25, maxRadius=99999)
+    for param2 in range(param2_range[0], param2_range[1], 10):
+        print("0")
 
-    # Draw circles on the image
-    if circles is not None:
-        circles = np.uint16(np.around(circles))
+        for param1 in range(param1_range[0], param1_range[1], 10):
+            print("1")
 
-        for i in circles[0, :]:
-            cv2.circle(img, (i[0], i[1]), i[2], (0, 255, 0), 2) # outer circle
-            cv2.circle(img, (i[0], i[1]), 2, (0, 0, 255), 3) # center point
+            circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 50,
+                                       param1=param1, param2=param2,
+                                       minRadius=minRadius, maxRadius=maxRadius)
+            if circles is not None:
+                circles = np.uint16(np.around(circles))
 
-    return img, circles
+                for circle in circles[0, :]:
+                    x, y, radius = circle
 
-image_path = "/Users/pl1001515/Downloads/can1.jpeg"
+                    if radius > max_radius:
+                        max_radius = radius
+                        best_circle = (x, y, radius)
+
+    return best_circle
+
+def draw_circle(img, circle):
+    if circle is not None:
+        x, y, radius = circle
+        cv2.circle(img, (x, y), radius, (0, 255, 0), 2)
+        cv2.circle(img, (x, y), 2, (0, 0, 255), 3)
+    return img
+
+# Main script
+image_path = "C:/Users/Owner/Downloads/bottle.jpeg"
+
+gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+gray0 = enhance_contrast(gray)
+gray1 = resize_to_720p(gray0)
+gray2 = sharpen_image(gray1)
+gray3 = cv2.GaussianBlur(gray2, (17, 17), 0)
+gray4 = sharpen_image(gray3)
+#_, gray5 = cv2.threshold(gray4, 100, 255, cv2.THRESH_BINARY)
+gray6 = cv2.medianBlur(gray4, ksize=5)
 
 if not os.path.exists(image_path):
     print(f"Error: File '{image_path}' not found.")
-
 else:
     img = cv2.imread(image_path)
 
-    # Check if image was loaded successfully
     if img is None:
         print(f"Error: Unable to load the image '{image_path}'. Check file path or file integrity.")
-
     else:
-        # Resize image to 720p
-        resized_img = resize_to_720p(img)
+        enhanced_img = enhance_contrast(img)
+        resized_img = resize_to_720p(enhanced_img)
+        sharpened_img = sharpen_image(resized_img)
+        best_circle = detect_best_circle(sharpened_img)
+        output_img = draw_circle(sharpened_img, best_circle)
 
-        # Detect circles
-        detected_img, circles = detect_circles(resized_img)
+        cv2.imshow("Best Circle with Enhanced Contrast", output_img)
+        cv2.imshow("gray", gray)
+        cv2.imshow("gray0", gray0)
+        cv2.imshow("gray1", gray1)
+        cv2.imshow("gray2", gray2)
+        cv2.imshow("gray3", gray3)
+        cv2.imshow("gray4", gray4)
+        #cv2.imshow("gray5", gray5)
+        cv2.imshow("gray6", gray6)
 
-        # Display image
-        cv2.imshow('Detected Circles', detected_img)
-
-        # Wait for user to press any key
         cv2.waitKey(0)
         cv2.destroyAllWindows()
