@@ -47,43 +47,106 @@ def detect_best_circle(img, param1_range=(35, 150), param2_range=(100, 250), min
 
     best_circle = None
     max_radius = 0
-
     height, width = gray.shape
 
-    """"Goes through a bunchn of parameters to find the 'best' circle"""
+    """Try to detect circles"""
     for param2 in range(param2_range[0], param2_range[1], 10):
         print ("0")
 
         for param1 in range(param1_range[0], param1_range[1], 10):
-            print ("1")
+            print("1")
 
             circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, 50,
                                        param1=param1, param2=param2,
                                        minRadius=minRadius, maxRadius=maxRadius)
+
             if circles is not None:
                 circles = np.uint16(np.around(circles))
 
                 for circle in circles[0, :]:
                     x, y, radius = circle
 
-                    # Ensure the entire circle is within the image bounds
                     if (x - radius >= 0 and y - radius >= 0 and 
                         x + radius < width and y + radius < height):
+
                         if radius > max_radius:
                             max_radius = radius
                             best_circle = (x, y, radius)
 
+    print("Done c")
+
     return best_circle
 
-def draw_circle(img, circle):
-    if circle is not None:
-        x, y, radius = circle
-        cv2.circle(img, (x, y), radius, (0, 255, 0), 2)
-        cv2.circle(img, (x, y), 2, (0, 0, 255), 3)
+def detect_best_ellipse(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(gray, 300, 500)
+    cv2.imshow("Detected Edges", edges)
+    cv2.waitKey(0)  # Wait for a key press to close the window
+    cv2.destroyAllWindows()
+    
+    best_ellipse = None
+    max_area = 0
+
+    for param1 in range(400, 500):
+        print("a")
+
+        for param2 in range(200, 300):
+            print("b")
+
+            edges = cv2.Canny(gray, param1, param2)
+
+            contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+            for contour in contours:
+                if len(contour) >= 5:
+                    ellipse = cv2.fitEllipse(contour)
+                    (x, y), (major_axis, minor_axis), angle = ellipse
+                    area = major_axis * minor_axis
+            
+                    # Validate axes and area
+                    if 0 < major_axis < 200 and 0 < minor_axis < 200:
+                        if area > max_area:
+                            max_area = area
+                            best_ellipse = ellipse
+
+    print("Done e")
+
+    return best_ellipse
+
+def draw_shape(img, shape):
+    print("Shape data:", shape)
+
+    if shape is not None:
+        if len(shape) == 3 and isinstance(shape[0], tuple) and isinstance(shape[1], tuple): # Ellipse
+            center = tuple(map(int, shape[0]))
+            axes = tuple(map(int, shape[1]))
+            angle = int(shape[2])
+            
+            # Safeguard for invalid axes
+            if axes[0] > 0 and axes[1] > 0:
+                cv2.ellipse(img, center, axes, angle, 0, 360, (255, 0, 0), 2)
+
+            else:
+                print(f"Error: Invalid ellipse axes {axes}")
+        else:
+            print(f"Error: Unrecognized shape format {shape}")
+    else:
+        print("No shape to draw.")
+
     return img
 
-# Main script
-image_path = "/Users/pl1001515/Downloads/opencan.jpeg"
+def display_contours(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contour_img = img.copy()
+
+    cv2.drawContours(contour_img, contours, -1, (0, 255, 0), 2)
+    cv2.imshow("Contours", contour_img)
+
+# Main script _________________________________________________________________
+image_path = "can.jpeg"
 
 # debugging start
 gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -109,11 +172,9 @@ else:
         enhanced_img = enhance_contrast(img)
         resized_img = resize_to_480p(enhanced_img)
         sharpened_img = sharpen_image(resized_img)
+        display_contours(sharpened_img)
         best_circle = detect_best_circle(sharpened_img)
-        output_img = draw_circle(sharpened_img, best_circle)
 
-        cv2.imshow("Best Circle with Enhanced Contrast", output_img)
-        
         # debugging start
         cv2.imshow("gray", gray)
         cv2.imshow("gray0", gray0)
@@ -124,6 +185,20 @@ else:
         #cv2.imshow("gray5", gray5)
         cv2.imshow("gray6", gray6)
         # debugging end
+
+        if best_circle is not None:
+            output_img = draw_shape(sharpened_img, best_circle)
+
+        else:
+            best_ellipse = detect_best_ellipse(sharpened_img)
+
+            if best_ellipse is not None:
+                output_img = draw_shape(sharpened_img, best_ellipse)
+
+            else:
+                print("No valid circles or ellipses found.")
+
+        cv2.imshow("Best Circle with Enhanced Contrast", output_img)
 
         cv2.waitKey(0)
         cv2.destroyAllWindows()
