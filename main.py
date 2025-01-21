@@ -3,13 +3,13 @@ import numpy as np
 import os
 import math
 
-def resize_to_480p(img):
+def resize_with_scaling(img, target_height=480):
     height, width = img.shape[:2]
-    aspect_ratio = width / height
-    new_height = 480
-    new_width = int(new_height * aspect_ratio)
+    scaling_factor = target_height / height
+    new_width = int(width * scaling_factor)
+    resized_img = cv2.resize(img, (new_width, target_height))
 
-    return cv2.resize(img, (new_width, new_height))
+    return resized_img, scaling_factor
 
 def enhance_contrast(img):
     """"Gray scales and HOG is used to increase contrast"""
@@ -161,15 +161,22 @@ def detect_best_ellipse(img):
 
     return best_ellipse, param1e, param2e, ellipse_list, angle_best
 
-def draw_shape(img, shape, param1e, param2e):
-    print (shape)
-
-    if shape is not None:
-        try:
+def draw_shape_with_scaling(img, shape, param1e, param2e, scaling_factor):
+    """Draw shapes on the image, scaled according to the resizing factor."""
+    if shape is None:
+        return img
+    
+    try:
+        # Circle: (x, y, radius)
+        if len(shape) == 3 and all(isinstance(i, (int, float)) for i in shape):
             x, y, radius = map(int, shape)
-            cv2.circle(img, (x, y), radius, (0, 255, 0), 2)
+            scaled_x = int(x * scaling_factor)
+            scaled_y = int(y * scaling_factor)
+            scaled_radius = int(radius * scaling_factor)
+            cv2.circle(img, (scaled_x, scaled_y), scaled_radius, (0, 255, 0), 2)
 
-        except:
+        # Ellipse: ((x, y), (major, minor), angle)
+        elif len(shape) == 3 and isinstance(shape[0], tuple):
             cv2.ellipse(img, shape, (255, 0, 0), 2)
 
             edges = cv2.Canny(gray, param1e, param2e)
@@ -181,6 +188,16 @@ def draw_shape(img, shape, param1e, param2e):
             cv2.drawContours(contour_img, contours, -1, (0, 255, 0), 2)
             cv2.imshow("contours", contour_img)
 
+            (x, y), (major, minor), angle = shape
+            scaled_x = int(x * scaling_factor)
+            scaled_y = int(y * scaling_factor)
+            scaled_major = int(major * scaling_factor)
+            scaled_minor = int(minor * scaling_factor)
+            cv2.ellipse(img, ((scaled_x, scaled_y), (scaled_major, scaled_minor), angle), (255, 0, 0), 2)
+    
+    except Exception as e:
+        print(f"Error drawing shape: {e}")
+    
     return img
 
 def display_contours(img):
@@ -205,12 +222,19 @@ def display_ellipses(img_shape, ellipse_list):
     cv2.destroyAllWindows()
 
 # Main script _________________________________________________________________
-image_path = "c:/Users/Owner/Downloads/bottle.jpeg"
+image_path = "/Users/pl1001515/Downloads/can.jpeg"
+
+_, ratio = resize_with_scaling(cv2.imread(image_path))
 
 # debugging start
 gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+if gray is None:
+    print(f"Error: Unable to load image at {image_path}")
+    exit()
+
 gray0 = enhance_contrast(gray)
-gray1 = resize_to_480p(gray0)
+gray1, _ = resize_with_scaling(gray0)  # Unpack only the resized image
 gray2 = sharpen_image(gray1)
 gray3 = cv2.GaussianBlur(gray2, (17, 17), 0)
 gray4 = sharpen_image(gray3)
@@ -229,7 +253,7 @@ else:
 
     else:
         enhanced_img = enhance_contrast(img)
-        resized_img = resize_to_480p(enhanced_img)
+        resized_img, _ = resize_with_scaling(enhanced_img)
         sharpened_img = sharpen_image(resized_img)
         display_contours(sharpened_img)
         best_circle = detect_best_circle(sharpened_img)
@@ -242,11 +266,10 @@ else:
         cv2.imshow("gray3", gray3)
         cv2.imshow("gray4", gray4)
         #cv2.imshow("gray5", gray5)
-        cv2.imshow("gray6", gray6)
         # debugging end
 
         if best_circle is not None:
-            output_img = draw_shape(sharpened_img, best_circle, 0, 0)
+            output_img = draw_shape_with_scaling(sharpened_img, best_circle, 0, 0, ratio)
 
         else:
             best_ellipse, param1e, param2e, ellipse_list, angle_best = detect_best_ellipse(sharpened_img)
@@ -255,7 +278,7 @@ else:
                 print(param1e, param2e)
                 print(angle_best)
 
-                output_img = draw_shape(sharpened_img, best_ellipse, param1e, param2e)
+                output_img = draw_shape_with_scaling(sharpened_img, best_ellipse, param1e, param2e, ratio)
 
             else:
                 print("No valid circles or ellipses found.")
